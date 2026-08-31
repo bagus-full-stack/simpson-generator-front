@@ -1,36 +1,66 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🍩 Simpsons Generator — Frontend
 
-## Getting Started
+Interface Next.js du générateur d'images Simpsons : texte-vers-image,
+img2img, structure (ControlNet Canny) et inpainting, avec galerie, caméra et
+éditeur de masque.
 
-First, run the development server:
+C'est le frontend de [`simpsons-generator`](https://github.com/bagus-full-stack/simpsons-generator)
+(API FastAPI + Stable Diffusion) — un dépôt Git séparé, à cloner à côté de
+celui-ci. Voir son README pour lancer l'API.
+
+## Stack
+
+- **Next.js 16** (App Router)
+- **Tailwind CSS**
+- **Lucide React** (icônes)
+- Canvas API (éditeur de masque), MediaDevices API (caméra)
+
+## Démarrage
 
 ```bash
+npm install
+copy .env.local.example .env.local   # (Mac/Linux : cp .env.local.example .env.local)
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Ouvrir [http://localhost:3000](http://localhost:3000). L'API doit tourner en
+parallèle (par défaut sur `http://localhost:8000`, voir le dépôt backend).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Variables d'environnement
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Variable | Description | Défaut |
+| --- | --- | --- |
+| `NEXT_PUBLIC_API_URL` | URL de base de l'API backend | `http://localhost:8000` |
+| `NEXT_PUBLIC_API_KEY` | Clé API (header `X-API-Key`), si l'API en exige une | *(vide)* |
 
-## Learn More
+## Fonctionnement
 
-To learn more about Next.js, take a look at the following resources:
+L'API ne renvoie plus l'image directement dans la réponse HTTP : chaque
+génération dépose un job et répond tout de suite avec son `id` et son statut.
+Le client interroge ensuite `GET /jobs/{id}` jusqu'à ce qu'il passe à
+`done`/`failed`/`rejected` — voir `app/lib/api.ts` (fonction `pollJob`), qui
+centralise tous les appels réseau.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Structure
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```plaintext
+app/
+├── page.tsx        # Interface (4 modes, galerie paginée, caméra, éditeur de masque)
+├── lib/api.ts       # Client API : soumission de job, polling, téléchargement
+├── layout.tsx
+└── globals.css
+```
 
-## Deploy on Vercel
+## Scripts
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+npm run dev      # serveur de dev
+npm run build    # build de production
+npm run start    # sert le build de production
+npm run lint     # ESLint
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Licence
+
+Projet réalisé à des fins éducatives. Style Simpsons : fan art, usage non
+commercial recommandé.
