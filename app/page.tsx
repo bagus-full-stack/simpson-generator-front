@@ -4,11 +4,23 @@ import { useState, useEffect, useRef } from "react";
 import {
   Download, Sparkles, Loader2, AlertCircle, X, Clock, Zap,
   Image as ImageIcon, Type, Box, Eraser, RotateCcw, Maximize2,
-  Trash2, Lightbulb, ChevronLeft, ChevronRight, Camera
+  Trash2, Lightbulb, ChevronLeft, ChevronRight, Camera,
+  type LucideIcon
 } from "lucide-react";
 import { type Job, submitTextJob, submitImageJob, pollJob, listJobs, downloadImage } from "./lib/api";
 
+type Mode = "text" | "image" | "pose" | "inpaint";
+
 interface GeneratedImage { id: string; url: string; prompt: string; timestamp: number; duration: string; }
+
+interface ModeOption { id: Mode; icon: LucideIcon; label: string; color: string; }
+
+const MODES: ModeOption[] = [
+  { id: "text", icon: Type, label: "Texte", color: "text-blue-600" },
+  { id: "image", icon: ImageIcon, label: "Img2Img", color: "text-purple-600" },
+  { id: "pose", icon: Box, label: "Struct.", color: "text-rose-600" },
+  { id: "inpaint", icon: Eraser, label: "Edit", color: "text-green-600" },
+];
 
 function jobToGalleryImage(job: Job): GeneratedImage {
   return {
@@ -35,9 +47,9 @@ export default function Home() {
   const [isTurbo, setIsTurbo] = useState(false);
 
   // Modes
-  const [mode, setMode] = useState<"text" | "image" | "pose" | "inpaint">("text");
+  const [mode, setMode] = useState<Mode>("text");
   const [prompt, setPrompt] = useState("");
-  const [steps, setSteps] = useState(30);
+  const [steps] = useState(30);
   const [strength, setStrength] = useState(0.75);
 
   // États Fichiers
@@ -258,7 +270,7 @@ export default function Home() {
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm animate-in fade-in">
               <div className="relative max-w-5xl w-full flex flex-col items-center">
                 <button onClick={() => setSelectedImage(null)} className="absolute -top-12 right-0 text-white hover:text-red-400"><X size={40}/></button>
-                <img src={selectedImage.url} className="rounded-lg max-h-[80vh] object-contain border-4 border-white shadow-2xl"/>
+                <img src={selectedImage.url} alt={selectedImage.prompt} className="rounded-lg max-h-[80vh] object-contain border-4 border-white shadow-2xl"/>
                 <div className="mt-6 flex gap-4">
                   <div className="text-white font-bold bg-white/20 px-4 py-2 rounded-full flex gap-2 items-center">
                     <Clock size={18}/> {selectedImage.duration}s
@@ -280,14 +292,9 @@ export default function Home() {
 
               {/* SÉLECTEUR DE MODE */}
               <div className="grid grid-cols-4 bg-slate-100 p-1 rounded-xl mb-6 gap-1">
-                {[
-                  { id: "text", icon: Type, label: "Texte", color: "text-blue-600" },
-                  { id: "image", icon: ImageIcon, label: "Img2Img", color: "text-purple-600" },
-                  { id: "pose", icon: Box, label: "Struct.", color: "text-rose-600" },
-                  { id: "inpaint", icon: Eraser, label: "Edit", color: "text-green-600" },
-                ].map((m) => (
+                {MODES.map((m) => (
                     <button
-                        key={m.id} onClick={() => { setMode(m.id as any); stopCamera(); }}
+                        key={m.id} onClick={() => { setMode(m.id); stopCamera(); }}
                         className={`flex flex-col md:flex-row items-center justify-center gap-1 py-2 rounded-lg font-bold text-xs md:text-sm transition-all ${mode === m.id ? `bg-white ${m.color} shadow-sm` : "text-slate-400"}`}
                     >
                       <m.icon size={16}/> <span className="hidden sm:inline">{m.label}</span>
@@ -346,7 +353,7 @@ export default function Home() {
                                     onMouseEnter={() => setCursorPos({x:0, y:0})} // Active le curseur
                                     onMouseLeave={() => setCursorPos(null)} // Désactive le curseur
                                 >
-                                  <img src={previewUrl} className="absolute inset-0 w-full h-full object-cover pointer-events-none"/>
+                                  <img src={previewUrl} alt="Aperçu de l'image source" className="absolute inset-0 w-full h-full object-cover pointer-events-none"/>
 
                                   {mode === "inpaint" && (
                                       <>
@@ -452,7 +459,7 @@ export default function Home() {
                       {currentImages.map(img => (
                           <div key={img.id} onClick={() => setSelectedImage(img)} className="relative group bg-white p-2 rounded-xl border-2 border-slate-200 hover:border-blue-500 cursor-pointer transition-all hover:-translate-y-1 hover:shadow-xl">
                             <div className="absolute top-3 left-3 z-10 bg-black/60 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex gap-1 backdrop-blur"><Clock size={10}/> {img.duration}s</div>
-                            <img src={img.url} className="w-full aspect-square object-cover rounded-lg bg-slate-100"/>
+                            <img src={img.url} alt={img.prompt} className="w-full aspect-square object-cover rounded-lg bg-slate-100"/>
                             <div className="absolute inset-0 bg-slate-900/80 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex flex-col items-center justify-center p-3 text-white backdrop-blur-sm pointer-events-none">
                               <p className="text-xs font-bold text-center mb-4 uppercase tracking-wide line-clamp-2">{img.prompt}</p>
                               <div className="flex gap-2 pointer-events-auto">
