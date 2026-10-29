@@ -44,7 +44,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedImage, setSelectedImage] = useState<GeneratedImage | null>(null);
-  const [isTurbo, setIsTurbo] = useState(false);
+  const [isTurbo, setIsTurbo] = useState(true);
 
   // Modes
   const [mode, setMode] = useState<Mode>("text");
