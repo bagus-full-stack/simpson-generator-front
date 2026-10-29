@@ -1,0 +1,7 @@
+.git
+.next
+node_modules
+generated_simpsons
+graphify-out
+.env.local
+*.tsbuildinfo
