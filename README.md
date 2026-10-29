@@ -13,7 +13,7 @@ celui-ci. Voir son README pour lancer l'API.
 - **Next.js 16** (App Router)
 - **Tailwind CSS**
 - **Lucide React** (icônes)
-- Canvas API (éditeur de masque), MediaDevices API (caméra)
+- Canvas API + Pointer Events (éditeur de masque, souris et tactile), MediaDevices API (caméra)
 
 ## Démarrage
 
@@ -31,7 +31,7 @@ parallèle (par défaut sur `http://localhost:8000`, voir le dépôt backend).
 | Variable | Description | Défaut |
 | --- | --- | --- |
 | `NEXT_PUBLIC_API_URL` | URL de base de l'API backend | `http://localhost:8000` |
-| `NEXT_PUBLIC_API_KEY` | Clé API (header `X-API-Key`), si l'API en exige une | *(vide)* |
+| `NEXT_PUBLIC_API_KEY` | Clé API (header `X-API-Key`), si l'API en exige une. Visible par tout visiteur (variable `NEXT_PUBLIC_`) | *(vide)* |
 
 ## Fonctionnement
 
@@ -40,6 +40,11 @@ génération dépose un job et répond tout de suite avec son `id` et son statut
 Le client interroge ensuite `GET /jobs/{id}` jusqu'à ce qu'il passe à
 `done`/`failed`/`rejected` — voir `app/lib/api.ts` (fonction `pollJob`), qui
 centralise tous les appels réseau.
+
+- Limites : description de 200 caractères, image de 8 Mo (sinon le serveur refuse).
+- Le client attend le résultat jusqu'à 5 minutes : un job peut patienter derrière d'autres, le serveur n'en traite qu'un à la fois.
+- La galerie est partagée par tous les visiteurs et n'a pas de suppression (l'API n'expose pas de `DELETE`).
+- Les suggestions sont en anglais : le modèle est entraîné sur des prompts anglais.
 
 ## Structure
 

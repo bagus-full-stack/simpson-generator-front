@@ -31,7 +31,9 @@ function authHeaders(extra: HeadersInit = {}): HeadersInit {
 async function parseJobResponse(res: Response): Promise<Job> {
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    throw new Error(body?.detail || `Erreur serveur (${res.status})`);
+    // FastAPI renvoie `detail` en liste d'objets pour une erreur de validation (422) : pas un texte.
+    const detail = typeof body?.detail === "string" ? body.detail : null;
+    throw new Error(detail || (res.status === 422 ? "Requête invalide (vérifiez la description)." : `Erreur serveur (${res.status})`));
   }
   return res.json();
 }
@@ -66,7 +68,8 @@ export async function listJobs(limit = 60): Promise<Job[]> {
 }
 
 const POLL_INTERVAL_MS = 1500;
-const POLL_TIMEOUT_MS = 120_000;
+// Large : un job peut attendre derrière d'autres dans la file du serveur (un seul à la fois).
+const POLL_TIMEOUT_MS = 300_000;
 
 const TERMINAL_STATUSES: JobStatus[] = ["done", "failed", "rejected"];
 

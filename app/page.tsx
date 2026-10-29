@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   Download, Sparkles, Loader2, AlertCircle, X, Clock, Zap,
   Image as ImageIcon, Type, Box, Eraser, RotateCcw, Maximize2,
-  Trash2, Lightbulb, ChevronLeft, ChevronRight, Camera,
+  Lightbulb, ChevronLeft, ChevronRight, Camera,
   type LucideIcon
 } from "lucide-react";
 import { type Job, submitTextJob, submitImageJob, pollJob, listJobs, downloadImage } from "./lib/api";
@@ -33,10 +33,12 @@ function jobToGalleryImage(job: Job): GeneratedImage {
 }
 
 const ITEMS_PER_PAGE = 6;
+const STEPS = 30; // ignoré en mode turbo (toujours 6 étapes côté serveur)
 
+// En anglais : le modèle est entraîné sur des prompts anglais.
 const SUGGESTIONS = [
   "Elon Musk", "Walter White", "Batman", "Marilyn Monroe",
-  "Un chat mignon", "Zombie apocalyptique", "Harry Potter", "Un Alien touriste"
+  "A cute cat", "Zombie apocalypse", "Harry Potter", "A tourist alien"
 ];
 
 export default function Home() {
@@ -49,7 +51,6 @@ export default function Home() {
   // Modes
   const [mode, setMode] = useState<Mode>("text");
   const [prompt, setPrompt] = useState("");
-  const [steps] = useState(30);
   const [strength, setStrength] = useState(0.75);
 
   // États Fichiers
@@ -73,11 +74,6 @@ export default function Home() {
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
 
-  useEffect(() => {
-    listJobs().then(jobs => setGallery(jobs.map(jobToGalleryImage))).catch(console.error);
-    return () => stopCamera();
-  }, []);
-
   // --- LOGIQUE CAMÉRA ---
   const startCamera = async () => {
     try {
@@ -85,12 +81,6 @@ export default function Home() {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
       streamRef.current = stream;
       setIsCameraOpen(true);
-      setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play();
-        }
-      }, 100);
     } catch (err) {
       console.error("Erreur caméra:", err);
       setError("Impossible d'accéder à la caméra.");
@@ -104,6 +94,25 @@ export default function Home() {
     }
     setIsCameraOpen(false);
   };
+
+  useEffect(() => {
+    listJobs().then(jobs => setGallery(jobs.map(jobToGalleryImage))).catch(console.error);
+    return () => stopCamera();
+  }, []);
+
+  // Le <video> n'existe qu'après le rendu : on y branche le flux une fois la caméra ouverte.
+  useEffect(() => {
+    if (isCameraOpen && videoRef.current) videoRef.current.srcObject = streamRef.current;
+  }, [isCameraOpen]);
+
+  // Libère l'ancien aperçu (blob) quand l'image change, et à la fermeture de la page.
+  useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setSelectedImage(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const capturePhoto = () => {
     if (!videoRef.current) return;
@@ -132,42 +141,27 @@ export default function Home() {
   const nextPage = () => { if (currentPage < totalPages) setCurrentPage(prev => prev + 1); };
   const prevPage = () => { if (currentPage > 1) setCurrentPage(prev => prev - 1); };
 
-  // --- FONCTIONS EXISTANTES ---
-  const deleteImage = (idToDelete: string) => {
-    setGallery((prev) => prev.filter((img) => img.id !== idToDelete));
-    if (selectedImage?.id === idToDelete) setSelectedImage(null);
-    if (currentImages.length === 1 && currentPage > 1) setCurrentPage(prev => prev - 1);
-  };
+  // --- LOGIQUE DE DESSIN (masque inpaint) ---
 
-  // --- NOUVELLE LOGIQUE DE DESSIN (Plus précise) ---
-
-  // Fonction utilitaire pour dessiner un point
-  const drawDot = (ctx: CanvasRenderingContext2D, x: number, y: number) => {
+  // Le canvas fait 512x512 en interne mais s'affiche plus petit : k convertit pixels affichés -> pixels du canvas.
+  const drawDot = (e: React.PointerEvent) => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (!canvas || !ctx) return;
+    const k = canvas.width / canvas.clientWidth;
     ctx.fillStyle = "rgba(255, 255, 255, 0.8)"; // Couleur du masque (blanc semi-transparent)
     ctx.beginPath();
-    // Dessine un cercle plein exactement sous la souris
-    ctx.arc(x, y, brushSize / 2, 0, Math.PI * 2);
+    ctx.arc(e.nativeEvent.offsetX * k, e.nativeEvent.offsetY * k, (brushSize * k) / 2, 0, Math.PI * 2);
     ctx.fill();
-  }
-
-  const startDrawing = (e: React.MouseEvent) => {
-    setIsDrawing(true);
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
-    if (!ctx || !canvas) return;
-
-    // Dessine un point immédiatement au clic
-    drawDot(ctx, e.nativeEvent.offsetX, e.nativeEvent.offsetY);
   };
 
-  const draw = (e: React.MouseEvent) => {
-    if (!isDrawing) return;
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
-    if (!ctx || !canvas) return;
+  const startDrawing = (e: React.PointerEvent) => {
+    setIsDrawing(true);
+    drawDot(e); // point immédiat au clic
+  };
 
-    // Dessine des points pendant le déplacement
-    drawDot(ctx, e.nativeEvent.offsetX, e.nativeEvent.offsetY);
+  const draw = (e: React.PointerEvent) => {
+    if (isDrawing) drawDot(e);
   };
 
   const stopDrawing = () => {
@@ -214,7 +208,8 @@ export default function Home() {
 
   const generate = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!prompt) return setError("Veuillez entrer une description.");
+    const text = prompt.trim();
+    if (!text) return setError("Veuillez entrer une description.");
     if (mode !== "text" && !selectedFile) return setError("Veuillez choisir une image.");
 
     setLoading(true);
@@ -224,11 +219,11 @@ export default function Home() {
       let job: Job;
 
       if (mode === "text") {
-        job = await submitTextJob(prompt, steps, isTurbo);
+        job = await submitTextJob(text, STEPS, isTurbo);
       } else {
         const formData = new FormData();
-        formData.append("prompt", prompt);
-        formData.append("steps", steps.toString());
+        formData.append("prompt", text);
+        formData.append("steps", STEPS.toString());
         formData.append("turbo_mode", isTurbo.toString());
 
         if (mode === "image") {
@@ -267,9 +262,9 @@ export default function Home() {
 
         {/* MODALE ZOOM */}
         {selectedImage && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm animate-in fade-in">
+            <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm animate-in fade-in">
               <div className="relative max-w-5xl w-full flex flex-col items-center">
-                <button onClick={() => setSelectedImage(null)} className="absolute -top-12 right-0 text-white hover:text-red-400"><X size={40}/></button>
+                <button onClick={() => setSelectedImage(null)} aria-label="Fermer" className="absolute -top-12 right-0 text-white hover:text-red-400"><X size={40}/></button>
                 <img src={selectedImage.url} alt={selectedImage.prompt} className="rounded-lg max-h-[80vh] object-contain border-4 border-white shadow-2xl"/>
                 <div className="mt-6 flex gap-4">
                   <div className="text-white font-bold bg-white/20 px-4 py-2 rounded-full flex gap-2 items-center">
@@ -306,7 +301,7 @@ export default function Home() {
                 <div>
                   <label className="block font-bold mb-1 text-sm">{mode === "inpaint" ? "Ce qu'il faut dessiner à la place" : "Description"}</label>
                   <input
-                      value={prompt} onChange={(e) => setPrompt(e.target.value)}
+                      value={prompt} onChange={(e) => setPrompt(e.target.value)} maxLength={200}
                       placeholder={mode === "inpaint" ? "Ex: A red cap, sunglasses..." : "Description..."}
                       className="w-full p-3 border-2 border-slate-300 rounded-xl focus:border-slate-900 outline-none font-medium"
                   />
@@ -339,8 +334,8 @@ export default function Home() {
                             <div className="relative aspect-square bg-black">
                               <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
                               <div className="absolute bottom-4 left-0 right-0 flex justify-center items-center gap-4">
-                                <button type="button" onClick={stopCamera} className="bg-red-500 p-2 rounded-full text-white shadow-lg"><X size={20}/></button>
-                                <button type="button" onClick={capturePhoto} className="bg-white p-4 rounded-full text-black shadow-lg border-4 border-slate-200 active:scale-95 transition-transform"><Camera size={24}/></button>
+                                <button type="button" onClick={stopCamera} aria-label="Fermer la caméra" className="bg-red-500 p-2 rounded-full text-white shadow-lg"><X size={20}/></button>
+                                <button type="button" onClick={capturePhoto} aria-label="Prendre la photo" className="bg-white p-4 rounded-full text-black shadow-lg border-4 border-slate-200 active:scale-95 transition-transform"><Camera size={24}/></button>
                               </div>
                             </div>
                         ) : (
@@ -361,7 +356,7 @@ export default function Home() {
                                         <canvas
                                             ref={canvasRef} width={512} height={512}
                                             className="absolute inset-0 w-full h-full touch-none cursor-none"
-                                            onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={stopDrawing} onMouseLeave={stopDrawing}
+                                            onPointerDown={startDrawing} onPointerMove={draw} onPointerUp={stopDrawing} onPointerLeave={stopDrawing}
                                         />
 
                                         {/* Le Curseur Personnalisé (Cercle blanc) */}
@@ -380,8 +375,8 @@ export default function Home() {
                                   )}
 
                                   <div className="absolute bottom-2 right-2 flex gap-2">
-                                    <button type="button" onClick={() => startCamera()} className="bg-black/50 text-white p-2 rounded-full hover:bg-black/80"><Camera size={16}/></button>
-                                    <button type="button" onClick={() => fileInputRef.current?.click()} className="bg-black/50 text-white p-2 rounded-full hover:bg-black/80"><RotateCcw size={16}/></button>
+                                    <button type="button" onClick={() => startCamera()} aria-label="Utiliser la caméra" className="bg-black/50 text-white p-2 rounded-full hover:bg-black/80"><Camera size={16}/></button>
+                                    <button type="button" onClick={() => fileInputRef.current?.click()} aria-label="Changer d'image" className="bg-black/50 text-white p-2 rounded-full hover:bg-black/80"><RotateCcw size={16}/></button>
                                   </div>
                                 </div>
                             ) : (
@@ -428,7 +423,7 @@ export default function Home() {
                 </div>
 
                 <button
-                    disabled={loading || !prompt || (mode !== "text" && !selectedFile)}
+                    disabled={loading || !prompt.trim() || (mode !== "text" && !selectedFile)}
                     className={`w-full text-white font-black py-4 rounded-xl shadow-[0_4px_0_rgba(0,0,0,0.2)] active:translate-y-1 transition-all flex justify-center gap-2 ${
                         mode === "image" ? "bg-purple-600 hover:bg-purple-700" :
                             mode === "pose" ? "bg-rose-600 hover:bg-rose-700" :
@@ -437,7 +432,7 @@ export default function Home() {
                     }`}
                 >
                   {loading ? <Loader2 className="animate-spin"/> : <Sparkles/>}
-                  {loading ? "GÉNÉRER" : "GÉNÉRER"}
+                  {loading ? "GÉNÉRATION…" : "GÉNÉRER"}
                 </button>
               </form>
               {error && <div className="mt-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm font-bold flex gap-2"><AlertCircle size={16}/>{error}</div>}
@@ -463,9 +458,8 @@ export default function Home() {
                             <div className="absolute inset-0 bg-slate-900/80 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex flex-col items-center justify-center p-3 text-white backdrop-blur-sm pointer-events-none">
                               <p className="text-xs font-bold text-center mb-4 uppercase tracking-wide line-clamp-2">{img.prompt}</p>
                               <div className="flex gap-2 pointer-events-auto">
-                                <button onClick={(e) => {e.stopPropagation(); setSelectedImage(img)}} className="bg-white text-blue-600 p-2 rounded-full hover:bg-blue-100"><Maximize2 size={18} /></button>
-                                <button onClick={(e) => {e.stopPropagation(); downloadImage(img.url, `simpson-${img.prompt}.png`)}} className="bg-white text-slate-900 p-2 rounded-full hover:bg-green-400"><Download size={18} /></button>
-                                <button onClick={(e) => {e.stopPropagation(); deleteImage(img.id)}} className="bg-white text-red-500 p-2 rounded-full hover:bg-red-500"><Trash2 size={18} /></button>
+                                <button onClick={(e) => {e.stopPropagation(); setSelectedImage(img)}} aria-label="Agrandir" className="bg-white text-blue-600 p-2 rounded-full hover:bg-blue-100"><Maximize2 size={18} /></button>
+                                <button onClick={(e) => {e.stopPropagation(); downloadImage(img.url, `simpson-${img.prompt}.png`)}} aria-label="Télécharger" className="bg-white text-slate-900 p-2 rounded-full hover:bg-green-400"><Download size={18} /></button>
                               </div>
                             </div>
                           </div>
@@ -475,9 +469,9 @@ export default function Home() {
               </div>
               {gallery.length > ITEMS_PER_PAGE && (
                   <div className="flex justify-center items-center gap-4 mt-8 pt-6 border-t border-slate-200">
-                    <button onClick={prevPage} disabled={currentPage === 1} className="p-2 rounded-full bg-slate-100 hover:bg-blue-100 disabled:opacity-30"><ChevronLeft size={24}/></button>
+                    <button onClick={prevPage} disabled={currentPage === 1} aria-label="Page précédente" className="p-2 rounded-full bg-slate-100 hover:bg-blue-100 disabled:opacity-30"><ChevronLeft size={24}/></button>
                     <span className="font-bold text-slate-500 text-sm">Page {currentPage} / {totalPages}</span>
-                    <button onClick={nextPage} disabled={currentPage === totalPages} className="p-2 rounded-full bg-slate-100 hover:bg-blue-100 disabled:opacity-30"><ChevronRight size={24}/></button>
+                    <button onClick={nextPage} disabled={currentPage === totalPages} aria-label="Page suivante" className="p-2 rounded-full bg-slate-100 hover:bg-blue-100 disabled:opacity-30"><ChevronRight size={24}/></button>
                   </div>
               )}
             </div>
