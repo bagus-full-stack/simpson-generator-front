@@ -24,8 +24,34 @@ export interface Job {
   created_at: string;
 }
 
+const CLIENT_ID_KEY = "simpsons.clientId";
+let memoryClientId: string | null = null; // si localStorage est indisponible : l'id vit le temps de l'onglet
+
+/** Identifiant secret de ce navigateur : le back ne liste que les jobs créés avec lui. */
+export function getClientId(): string {
+  try {
+    let id = localStorage.getItem(CLIENT_ID_KEY);
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem(CLIENT_ID_KEY, id);
+    }
+    return id;
+  } catch {
+    return (memoryClientId ??= crypto.randomUUID());
+  }
+}
+
+/** Reprend l'identifiant d'un autre appareil (lien `?code=`) pour y retrouver ses créations. */
+export function adoptClientId(id: string): void {
+  if (!/^[\w-]{8,64}$/.test(id)) return;
+  memoryClientId = id;
+  try { localStorage.setItem(CLIENT_ID_KEY, id); } catch { /* idem */ }
+}
+
 function authHeaders(extra: HeadersInit = {}): HeadersInit {
-  return API_KEY ? { ...extra, "X-API-Key": API_KEY } : extra;
+  const headers: Record<string, string> = { ...(extra as Record<string, string>), "X-Client-Id": getClientId() };
+  if (API_KEY) headers["X-API-Key"] = API_KEY;
+  return headers;
 }
 
 async function parseJobResponse(res: Response): Promise<Job> {

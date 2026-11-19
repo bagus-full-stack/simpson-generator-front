@@ -4,10 +4,10 @@ import { useState, useEffect, useRef } from "react";
 import {
   Download, Sparkles, Loader2, AlertCircle, X, Clock, Zap,
   Image as ImageIcon, Type, Box, Eraser, RotateCcw, Maximize2,
-  Lightbulb, ChevronLeft, ChevronRight, Camera,
+  Lightbulb, ChevronLeft, ChevronRight, Camera, Link2, SwitchCamera,
   type LucideIcon
 } from "lucide-react";
-import { type Job, submitTextJob, submitImageJob, pollJob, listJobs, downloadImage } from "./lib/api";
+import { type Job, submitTextJob, submitImageJob, pollJob, listJobs, downloadImage, getClientId, adoptClientId } from "./lib/api";
 
 type Mode = "text" | "image" | "pose" | "inpaint";
 
@@ -37,20 +37,11 @@ function jobToGalleryImage(job: Job): GeneratedImage {
   };
 }
 
-// L'API n'a pas de notion d'utilisateur : chaque navigateur retient ses propres jobs
-// (galerie perso) et le job en cours (pour reprendre l'attente après un rechargement
-// ou un onglet endormi sur mobile).
-// shortcut: filtrage côté client seulement, l'API liste toujours tous les jobs ; à remplacer par un id client côté back.
-const MY_JOBS_KEY = "simpsons.jobs";
+// Job en cours : on le retient pour reprendre l'attente après un rechargement ou un onglet endormi sur mobile.
+// La galerie perso, elle, est filtrée par le back via l'identifiant client (voir api.ts::getClientId).
 const PENDING_KEY = "simpsons.pending";
-function readMyJobs(): string[] {
-  try { return JSON.parse(localStorage.getItem(MY_JOBS_KEY) ?? "[]"); } catch { return []; }
-}
 function rememberJob(id: string) {
-  try {
-    localStorage.setItem(MY_JOBS_KEY, JSON.stringify([id, ...readMyJobs()].slice(0, 200)));
-    localStorage.setItem(PENDING_KEY, id);
-  } catch { /* stockage indisponible : la galerie perso ne persistera pas */ }
+  try { localStorage.setItem(PENDING_KEY, id); } catch { /* reprise impossible sans stockage */ }
 }
 function clearPending() {
   try { localStorage.removeItem(PENDING_KEY); } catch { /* idem */ }
@@ -84,6 +75,8 @@ export default function Home() {
 
   // États Caméra
   const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [facing, setFacing] = useState<"user" | "environment">("user");
+  const [linkCopied, setLinkCopied] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -110,11 +103,12 @@ export default function Home() {
   const elapsedLabel = `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`;
 
   // --- LOGIQUE CAMÉRA ---
-  const startCamera = async () => {
+  const startCamera = async (facing: "user" | "environment" = "user") => {
     try {
       stopCamera();
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing } } });
       streamRef.current = stream;
+      setFacing(facing);
       setIsCameraOpen(true);
     } catch (err) {
       console.error("Erreur caméra:", err);
@@ -145,11 +139,15 @@ export default function Home() {
   };
 
   useEffect(() => {
-    const mine = new Set(readMyJobs());
+    const code = new URLSearchParams(window.location.search).get("code");
+    if (code) {
+      adoptClientId(code);
+      window.history.replaceState(null, "", window.location.pathname);
+    }
     let pending: string | null = null;
     try { pending = localStorage.getItem(PENDING_KEY); } catch { /* idem */ }
     listJobs().then(jobs => {
-      setGallery(jobs.filter(j => mine.has(j.id)).map(jobToGalleryImage));
+      setGallery(jobs.map(jobToGalleryImage));
       if (pending) {
         // Reprise après rechargement ou onglet endormi : on reprend l'attente du job en cours.
         setLoading(true);
@@ -403,8 +401,9 @@ export default function Home() {
                             <div className="relative aspect-square bg-black">
                               <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
                               <div className="absolute bottom-4 left-0 right-0 flex justify-center items-center gap-4">
-                                <button type="button" onClick={stopCamera} aria-label="Fermer la caméra" className="bg-red-500 p-2 rounded-full text-white shadow-lg"><X size={20}/></button>
+                                <button type="button" onClick={stopCamera} aria-label="Fermer la caméra" className="bg-red-500 p-3 rounded-full text-white shadow-lg"><X size={20}/></button>
                                 <button type="button" onClick={capturePhoto} aria-label="Prendre la photo" className="bg-white p-4 rounded-full text-black shadow-lg border-4 border-slate-200 active:scale-95 transition-transform"><Camera size={24}/></button>
+                                <button type="button" onClick={() => startCamera(facing === "user" ? "environment" : "user")} aria-label="Changer de caméra" className="bg-white p-3 rounded-full text-black shadow-lg"><SwitchCamera size={20}/></button>
                               </div>
                             </div>
                         ) : (
@@ -460,7 +459,7 @@ export default function Home() {
                                       <ImageIcon size={24} className="mb-2 text-slate-600"/>
                                       <span className="text-xs font-bold text-slate-700">Fichier</span>
                                     </button>
-                                    <button type="button" onClick={startCamera} className="flex flex-col items-center justify-center bg-white p-4 rounded-xl shadow-sm hover:shadow-md border border-slate-300 transition-all w-24 h-24">
+                                    <button type="button" onClick={() => startCamera()} className="flex flex-col items-center justify-center bg-white p-4 rounded-xl shadow-sm hover:shadow-md border border-slate-300 transition-all w-24 h-24">
                                       <Camera size={24} className="mb-2 text-slate-600"/>
                                       <span className="text-xs font-bold text-slate-700">Caméra</span>
                                     </button>
@@ -531,7 +530,20 @@ export default function Home() {
           <div className="lg:col-span-2">
             <div className="bg-white/90 backdrop-blur p-6 rounded-3xl border-4 border-slate-900 min-h-[600px] flex flex-col justify-between">
               <div>
-                <h2 className="text-2xl font-black mb-6 flex items-center gap-2"><Camera size={24} aria-hidden="true" /> Mes créations ({gallery.length})</h2>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
+                  <h2 className="text-2xl font-black flex items-center gap-2"><Camera size={24} aria-hidden="true" /> Mes créations ({gallery.length})</h2>
+                  <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard?.writeText(`${window.location.origin}/?code=${getClientId()}`)
+                            .then(() => { setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2500); })
+                            .catch(() => setError("Copie impossible : autorise l'accès au presse-papiers."));
+                      }}
+                      className="min-h-11 px-3 rounded-full border border-slate-300 bg-slate-50 hover:bg-yellow-100 text-xs font-bold flex items-center gap-1"
+                  >
+                    <Link2 size={14} aria-hidden="true" /> {linkCopied ? "Lien copié" : "Copier mon lien d'accès"}
+                  </button>
+                </div>
                 {gallery.length === 0 && !loading ? (
                     <div className="h-64 flex flex-col items-center justify-center text-slate-600 border-4 border-dashed border-slate-300 rounded-3xl bg-slate-50/50">
                       <Sparkles size={48} className="mb-4 opacity-40" />
