@@ -368,7 +368,7 @@ export default function Home() {
                 <div>
                   <label htmlFor="prompt" className="block font-bold mb-1 text-sm">{mode === "inpaint" ? "Ce qu'il faut dessiner à la place" : "Description (en anglais de préférence)"}</label>
                   <input
-                      id="prompt" value={prompt} onChange={(e) => setPrompt(e.target.value)} maxLength={200}
+                      id="prompt" value={prompt} onChange={(e) => setPrompt(e.target.value)} maxLength={300}
                       placeholder={mode === "inpaint" ? "Ex: A red cap, sunglasses..." : "Ex: Batman, A cute cat..."}
                       className="w-full p-3 border-2 border-slate-300 rounded-xl focus:border-slate-900 outline-none font-medium"
                   />

@@ -41,9 +41,9 @@ Le client interroge ensuite `GET /jobs/{id}` jusqu'à ce qu'il passe à
 `done`/`failed`/`rejected` — voir `app/lib/api.ts` (fonction `pollJob`), qui
 centralise tous les appels réseau.
 
-- Limites : description de 200 caractères, image de 8 Mo (sinon le serveur refuse).
-- Le client attend le résultat jusqu'à 5 minutes : un job peut patienter derrière d'autres, le serveur n'en traite qu'un à la fois.
-- La galerie est partagée par tous les visiteurs et n'a pas de suppression (l'API n'expose pas de `DELETE`).
+- Limites : description de 300 caractères (le modèle n'en lit qu'environ 77 tokens), image de 8 Mo (sinon le serveur refuse).
+- Le client attend le résultat jusqu'à 15 minutes : un job peut patienter derrière d'autres (le serveur n'en traite qu'un à la fois) et une génération dure plusieurs minutes sur un serveur CPU. Un chronomètre s'affiche pendant l'attente ; le job en cours est repris si l'onglet est rechargé.
+- « Mes créations » ne montre que les images de ce navigateur : un identifiant secret (`simpsons.clientId`, dans `localStorage`) est envoyé à l'API dans l'en-tête `X-Client-Id`. Le bouton « Copier mon lien d'accès » donne un lien `?code=…` qui reprend cet identifiant sur un autre appareil. Pas de suppression (l'API n'expose pas de `DELETE`).
 - Les suggestions sont en anglais : le modèle est entraîné sur des prompts anglais.
 
 ## Structure
@@ -55,6 +55,17 @@ app/
 ├── layout.tsx
 └── globals.css
 ```
+
+## Docker / Coolify
+
+Le `Dockerfile` (3 étapes, `node:22-alpine`, sortie Next.js `standalone`, utilisateur non-root, image ≈ 300 Mo) sert l'app sur le port 3000. `NEXT_PUBLIC_*` est figé au **build** : sur Coolify, définir `NEXT_PUBLIC_API_URL` (et `NEXT_PUBLIC_API_KEY`) comme variables de build, puis redéployer pour les changer.
+
+```bash
+docker build --build-arg NEXT_PUBLIC_API_URL=http://localhost:8000 -t simpson-front .
+docker run -p 3000:3000 simpson-front
+```
+
+Un push sur `master` redéploie l'app via un webhook GitHub (build pack Dockerfile).
 
 ## Scripts
 
