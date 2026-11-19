@@ -68,8 +68,9 @@ export async function listJobs(limit = 60): Promise<Job[]> {
 }
 
 const POLL_INTERVAL_MS = 1500;
-// Large : un job peut attendre derrière d'autres dans la file du serveur (un seul à la fois).
-const POLL_TIMEOUT_MS = 300_000;
+// Large : un job peut attendre derrière d'autres dans la file du serveur (un seul à la fois),
+// et sur un serveur CPU une génération dure ~7 min.
+const POLL_TIMEOUT_MS = 900_000;
 
 const TERMINAL_STATUSES: JobStatus[] = ["done", "failed", "rejected"];
 
